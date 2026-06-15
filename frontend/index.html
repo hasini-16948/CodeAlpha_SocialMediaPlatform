@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vibe</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div id="auth-section">
+    <div class="auth-box">
+      <div class="auth-brand-inline">
+        <div class="auth-logo">V</div>
+        <h1>Vibe</h1>
+      </div>
+      <p class="auth-tagline">Share your moments</p>
+
+      <div id="register-form">
+        <h2>Create account</h2>
+        <input type="text" id="reg-username" placeholder="Username" autocomplete="off">
+        <input type="email" id="reg-email" placeholder="Email" autocomplete="off">
+        <input type="password" id="reg-password" placeholder="Password" autocomplete="new-password">
+        <button onclick="register()">Create Account</button>
+        <p class="switch">Already have an account? <span onclick="showLogin()">Sign in</span></p>
+      </div>
+
+      <div id="login-form" style="display:none">
+        <h2>Welcome back</h2>
+        <input type="email" id="log-email" placeholder="Email" autocomplete="off">
+        <input type="password" id="log-password" placeholder="Password" autocomplete="new-password">
+        <button onclick="login()">Sign In</button>
+        <p class="switch">No account? <span onclick="showRegister()">Create one</span></p>
+      </div>
+
+      <div id="auth-message"></div>
+    </div>
+  </div>
+
+  <div id="app-section" style="display:none">
+
+    <nav>
+      <div class="nav-inner">
+        <div class="nav-brand" onclick="showFeed()">
+          <div class="nav-logo">V</div>
+          <span>Vibe</span>
+        </div>
+        <div class="nav-right">
+          <button class="nav-btn" onclick="showFeed()">Home</button>
+          <button class="nav-btn" onclick="showProfile()">Profile</button>
+          <button class="nav-btn logout" onclick="logout()">Sign out</button>
+        </div>
+      </div>
+    </nav>
+
+    <div class="content">
+
+      <div id="feed-section">
+        <div class="create-post">
+          <textarea id="post-content" placeholder="What's on your mind?"></textarea>
+          <div class="create-post-footer">
+            <button onclick="createPost()">Post</button>
+          </div>
+        </div>
+        <div id="posts-container"></div>
+      </div>
+
+      <div id="profile-section" style="display:none">
+        <div class="profile-header">
+          <div class="profile-avatar-big" id="profile-avatar-big"></div>
+          <div>
+            <h2 id="profile-username"></h2>
+            <p id="profile-label"></p>
+          </div>
+          <button class="back-btn" onclick="showFeed()">← Back</button>
+        </div>
+        <div id="user-posts"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
