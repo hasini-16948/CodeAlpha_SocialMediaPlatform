@@ -11,7 +11,6 @@ const SECRET = 'socialmedia_secret_key_2024';
 app.use(cors());
 app.use(express.json());
 
-// Create all tables
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -31,11 +30,6 @@ db.exec(`
     post_id INTEGER,
     PRIMARY KEY (user_id, post_id)
   );
-  CREATE TABLE IF NOT EXISTS follows (
-    follower_id INTEGER,
-    following_id INTEGER,
-    PRIMARY KEY (follower_id, following_id)
-  );
   CREATE TABLE IF NOT EXISTS comments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     post_id INTEGER NOT NULL,
@@ -45,16 +39,28 @@ db.exec(`
   );
 `);
 
+// Auth middleware
+function auth(req, res, next) {
+  const header = req.headers.authorization;
+  if (!header) return res.status(401).json({ error: 'No token' });
+  try {
+    req.user = jwt.verify(header.split(' ')[1], SECRET);
+    next();
+  } catch {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+}
+
 // REGISTER
 app.post('/register', async (req, res) => {
   const { username, email, password } = req.body;
+  if (!username || !email || !password)
+    return res.status(400).json({ error: 'All fields required' });
   try {
     const hashed = await bcrypt.hash(password, 10);
-    db.prepare(
-      'INSERT INTO users (username, email, password) VALUES (?, ?, ?)'
-    ).run(username, email, hashed);
+    db.prepare('INSERT INTO users (username, email, password) VALUES (?, ?, ?)').run(username, email, hashed);
     res.json({ message: 'Registered successfully!' });
-  } catch (err) {
+  } catch {
     res.status(400).json({ error: 'Username or email already exists' });
   }
 });
@@ -63,145 +69,119 @@ app.post('/register', async (req, res) => {
 app.post('/login', async (req, res) => {
   const { email, password } = req.body;
   try {
-    const user = db.prepare(
-      'SELECT * FROM users WHERE email = ?'
-    ).get(email);
+    const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
     if (!user) return res.status(400).json({ error: 'User not found' });
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) return res.status(400).json({ error: 'Wrong password' });
-    const token = jwt.sign({ userId: user.id }, SECRET);
+    const token = jwt.sign({ userId: user.id }, SECRET, { expiresIn: '7d' });
     res.json({ token, username: user.username, userId: user.id });
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: 'Login failed' });
   }
 });
 
-// GET USER PROFILE
+// PROFILE
 app.get('/profile/:id', (req, res) => {
-  const user = db.prepare(
-    'SELECT id, username, email, bio FROM users WHERE id = ?'
-  ).get(req.params.id);
+  const user = db.prepare('SELECT id, username, email, bio FROM users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
   res.json(user);
 });
-// CREATE A POST
-app.post('/posts', (req, res) => {
-  const { content, userId } = req.body;
+
+// CREATE POST (auth required)
+app.post('/posts', auth, (req, res) => {
+  const { content } = req.body;
+  if (!content || !content.trim()) return res.status(400).json({ error: 'Content required' });
   try {
-    db.prepare(
-      'INSERT INTO posts (user_id, content) VALUES (?, ?)'
-    ).run(userId, content);
-    res.json({ message: 'Post created successfully!' });
-  } catch (err) {
+    db.prepare('INSERT INTO posts (user_id, content) VALUES (?, ?)').run(req.user.userId, content.trim());
+    res.json({ message: 'Post created!' });
+  } catch {
     res.status(500).json({ error: 'Could not create post' });
   }
 });
 
 // GET ALL POSTS
 app.get('/posts', (req, res) => {
-  const posts = db.prepare(`
-    SELECT posts.id, posts.content, posts.created_at,
-           users.username, users.id as user_id
-    FROM posts
-    JOIN users ON posts.user_id = users.id
-    ORDER BY posts.created_at DESC
-  `).all();
-  res.json(posts);
-});
-
-// GET ONE USER'S POSTS
-app.get('/posts/user/:userId', (req, res) => {
-  const posts = db.prepare(`
-    SELECT posts.id, posts.content, posts.created_at,
-           users.username
-    FROM posts
-    JOIN users ON posts.user_id = users.id
-    WHERE posts.user_id = ?
-    ORDER BY posts.created_at DESC
-  `).all(req.params.userId);
-  res.json(posts);
-});
-
-// LIKE A POST
-app.post('/posts/:id/like', (req, res) => {
-  const { userId } = req.body;
-  const postId = req.params.id;
   try {
-    db.prepare(
-      'INSERT INTO likes (user_id, post_id) VALUES (?, ?)'
-    ).run(userId, postId);
-    res.json({ message: 'Post liked!' });
-  } catch (err) {
+    const posts = db.prepare(`
+      SELECT posts.id, posts.content, posts.created_at, users.username, users.id as user_id
+      FROM posts JOIN users ON posts.user_id = users.id
+      ORDER BY posts.created_at DESC
+    `).all();
+    res.json(posts);
+  } catch { res.json([]); }
+});
+
+// GET USER POSTS
+app.get('/posts/user/:userId', (req, res) => {
+  try {
+    const posts = db.prepare(`
+      SELECT posts.id, posts.content, posts.created_at, users.username
+      FROM posts JOIN users ON posts.user_id = users.id
+      WHERE posts.user_id = ? ORDER BY posts.created_at DESC
+    `).all(req.params.userId);
+    res.json(posts);
+  } catch { res.json([]); }
+});
+
+// DELETE POST (auth + ownership check)
+app.delete('/posts/:id', auth, (req, res) => {
+  const post = db.prepare('SELECT * FROM posts WHERE id = ?').get(req.params.id);
+  if (!post) return res.status(404).json({ error: 'Post not found' });
+  if (post.user_id !== req.user.userId) return res.status(403).json({ error: 'Not your post' });
+  db.prepare('DELETE FROM likes WHERE post_id = ?').run(req.params.id);
+  db.prepare('DELETE FROM comments WHERE post_id = ?').run(req.params.id);
+  db.prepare('DELETE FROM posts WHERE id = ?').run(req.params.id);
+  res.json({ message: 'Deleted!' });
+});
+
+// LIKE (auth required)
+app.post('/posts/:id/like', auth, (req, res) => {
+  try {
+    db.prepare('INSERT INTO likes (user_id, post_id) VALUES (?, ?)').run(req.user.userId, req.params.id);
+    res.json({ message: 'Liked!' });
+  } catch {
     res.status(400).json({ error: 'Already liked' });
   }
 });
 
-// UNLIKE A POST
-app.delete('/posts/:id/like', (req, res) => {
-  const { userId } = req.body;
-  const postId = req.params.id;
-  db.prepare(
-    'DELETE FROM likes WHERE user_id = ? AND post_id = ?'
-  ).run(userId, postId);
-  res.json({ message: 'Post unliked!' });
+app.delete('/posts/:id/like', auth, (req, res) => {
+  db.prepare('DELETE FROM likes WHERE user_id = ? AND post_id = ?').run(req.user.userId, req.params.id);
+  res.json({ message: 'Unliked!' });
 });
 
-// GET LIKE COUNT
 app.get('/posts/:id/likes', (req, res) => {
-  const count = db.prepare(
-    'SELECT COUNT(*) as likes FROM likes WHERE post_id = ?'
-  ).get(req.params.id);
-  res.json(count);
+  const row = db.prepare('SELECT COUNT(*) as likes FROM likes WHERE post_id = ?').get(req.params.id);
+  res.json(row);
 });
 
-// ADD COMMENT
-app.post('/posts/:id/comment', (req, res) => {
-  const { userId, content } = req.body;
-  const postId = req.params.id;
+app.get('/users/:userId/liked-posts', (req, res) => {
   try {
-    db.prepare(
-      'INSERT INTO comments (post_id, user_id, content) VALUES (?, ?, ?)'
-    ).run(postId, userId, content);
+    const rows = db.prepare('SELECT post_id FROM likes WHERE user_id = ?').all(req.params.userId);
+    res.json(rows.map(r => r.post_id));
+  } catch { res.json([]); }
+});
+
+// COMMENTS (auth required)
+app.post('/posts/:id/comment', auth, (req, res) => {
+  const { content } = req.body;
+  if (!content || !content.trim()) return res.status(400).json({ error: 'Content required' });
+  try {
+    db.prepare('INSERT INTO comments (post_id, user_id, content) VALUES (?, ?, ?)').run(req.params.id, req.user.userId, content.trim());
     res.json({ message: 'Comment added!' });
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: 'Could not add comment' });
   }
 });
 
-// GET COMMENTS
 app.get('/posts/:id/comments', (req, res) => {
-  const comments = db.prepare(`
-    SELECT comments.content, comments.created_at,
-           users.username
-    FROM comments
-    JOIN users ON comments.user_id = users.id
-    WHERE comments.post_id = ?
-    ORDER BY comments.created_at ASC
-  `).all(req.params.id);
-  res.json(comments);
-});
-
-// FOLLOW USER
-app.post('/follow', (req, res) => {
-  const { followerId, followingId } = req.body;
   try {
-    db.prepare(
-      'INSERT INTO follows (follower_id, following_id) VALUES (?, ?)'
-    ).run(followerId, followingId);
-    res.json({ message: 'Followed!' });
-  } catch (err) {
-    res.status(400).json({ error: 'Already following' });
-  }
+    const comments = db.prepare(`
+      SELECT comments.id, comments.content, comments.created_at, users.username
+      FROM comments JOIN users ON comments.user_id = users.id
+      WHERE comments.post_id = ? ORDER BY comments.created_at ASC
+    `).all(req.params.id);
+    res.json(comments);
+  } catch { res.json([]); }
 });
 
-// UNFOLLOW USER
-app.delete('/follow', (req, res) => {
-  const { followerId, followingId } = req.body;
-  db.prepare(
-    'DELETE FROM follows WHERE follower_id = ? AND following_id = ?'
-  ).run(followerId, followingId);
-  res.json({ message: 'Unfollowed!' });
-});
-app.listen(3000, () => {
-  console.log('Server running at http://localhost:3000');
-});
+app.listen(3000, () => console.log('Server running at http://localhost:3000'));
