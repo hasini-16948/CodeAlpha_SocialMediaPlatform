@@ -3,15 +3,13 @@ let token = localStorage.getItem('token');
 let currentUserId = localStorage.getItem('userId');
 let currentUsername = localStorage.getItem('username');
 
-// Auth header helper
 function authHeaders() {
   return { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
 }
 
-// Safely escape text to prevent XSS
 function esc(str) {
   const d = document.createElement('div');
-  d.textContent = str;
+  d.textContent = String(str);
   return d.innerHTML;
 }
 
@@ -63,7 +61,9 @@ async function login() {
     const res  = await fetch(`${API}/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
     const data = await res.json();
     if (data.token) {
-      token = data.token; currentUserId = String(data.userId); currentUsername = data.username;
+      token = data.token;
+      currentUserId = String(data.userId);
+      currentUsername = data.username;
       localStorage.setItem('token', data.token);
       localStorage.setItem('userId', String(data.userId));
       localStorage.setItem('username', data.username);
@@ -83,11 +83,21 @@ function logout() {
 
 // ── POSTS ─────────────────────────────────────────
 async function createPost() {
-  const content = document.getElementById('post-content').value.trim();
+  const textarea = document.getElementById('post-content');
+  const content  = textarea.value.trim();
   if (!content) return;
+
   try {
-    const res = await fetch(`${API}/posts`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ content }) });
-    if (res.ok) { document.getElementById('post-content').value = ''; loadPosts(); }
+    const res = await fetch(`${API}/posts`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ content })
+    });
+
+    if (res.ok) {
+      textarea.value = '';
+      loadPosts(); 
+    }
   } catch { console.error('Post failed'); }
 }
 
@@ -97,54 +107,59 @@ async function loadPosts() {
       fetch(`${API}/posts`),
       fetch(`${API}/users/${currentUserId}/liked-posts`)
     ]);
-    const posts = await postsRes.json();
-    const likedPostIds = likedRes.ok ? await likedRes.json() : [];
 
-    const box = document.getElementById('posts-container');
-    box.innerHTML = '';
+    const posts        = await postsRes.json();
+    const likedPostIds = likedRes.ok ? await likedRes.json() : [];
+    const box          = document.getElementById('posts-container');
+    box.innerHTML      = '';
 
     if (!posts || !posts.length) {
       box.innerHTML = '<div class="empty">No posts yet — be the first to share!</div>';
       return;
     }
 
-    posts.forEach(post => {
-      const letter = post.username ? post.username.charAt(0).toUpperCase() : 'U';
-      const date   = new Date(post.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-      const isMyPost = String(post.user_id) === String(currentUserId);
-      const isLiked  = likedPostIds.includes(post.id);
-
-      const card = document.createElement('div');
-      card.className = 'post-card';
-      card.id = `post-${post.id}`;
-      card.innerHTML = `
-        <div class="post-header">
-          <div class="avatar" onclick="viewProfile(${post.user_id}, '${esc(post.username)}')">${esc(letter)}</div>
-          <div>
-            <div class="post-username" onclick="viewProfile(${post.user_id}, '${esc(post.username)}')">${esc(post.username)}</div>
-            <div class="post-time">${date}</div>
-          </div>
-        </div>
-        <div class="post-content">${esc(post.content)}</div>
-        <div class="post-actions">
-          <button class="action-btn like-btn ${isLiked ? 'liked' : ''}" id="like-btn-${post.id}" data-liked="${isLiked}" onclick="likePost(${post.id})">
-            <span class="thumb-icon">👍</span> <span class="btn-text">${isLiked ? 'Liked' : 'Like'}</span>
-          </button>
-          <span class="like-count" id="like-count-${post.id}"></span>
-          <button class="action-btn" onclick="toggleComments(${post.id})">💬 Comment</button>
-          ${isMyPost ? `<button class="action-btn delete-btn" onclick="deletePost(${post.id})">🗑️ Delete</button>` : ''}
-        </div>
-        <div class="comments-section" id="comments-${post.id}" style="display:none">
-          <div id="comments-list-${post.id}"></div>
-          <div class="comment-input">
-            <input type="text" id="comment-input-${post.id}" placeholder="Write a comment..." onkeydown="if(event.key==='Enter') addComment(${post.id})">
-            <button onclick="addComment(${post.id})">Send</button>
-          </div>
-        </div>`;
-      box.appendChild(card);
-      loadLikeCount(post.id);
-    });
+    posts.forEach(post => renderPost(post, likedPostIds, box));
   } catch (err) { console.error(err); }
+}
+
+function renderPost(post, likedPostIds, box) {
+  const letter    = post.username ? post.username.charAt(0).toUpperCase() : 'U';
+  const date      = new Date(post.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  const isMyPost  = String(post.user_id) === String(currentUserId);
+  const isLiked   = likedPostIds.includes(post.id);
+
+  const card = document.createElement('div');
+  card.className = 'post-card';
+  card.id = `post-${post.id}`;
+  card.innerHTML = `
+    <div class="post-header">
+      <div class="avatar" onclick="viewProfile(${post.user_id}, '${esc(post.username)}')">${esc(letter)}</div>
+      <div>
+        <div class="post-username" onclick="viewProfile(${post.user_id}, '${esc(post.username)}')">${esc(post.username)}</div>
+        <div class="post-time">${date}</div>
+      </div>
+    </div>
+    <div class="post-content">${esc(post.content)}</div>
+    <div class="post-actions">
+      <button type="button" class="action-btn like-btn ${isLiked ? 'liked' : ''}" id="like-btn-${post.id}" data-liked="${isLiked}" onclick="likePost(${post.id})">
+        <span class="thumb-icon">👍</span> <span class="btn-text">${isLiked ? 'Liked' : 'Like'}</span>
+      </button>
+      <span class="like-count" id="like-count-${post.id}"></span>
+      
+      <button type="button" class="action-btn" onclick="toggleComments(${post.id})">💬 Comment</button>
+      
+      ${isMyPost ? `<button type="button" class="action-btn delete-btn" onclick="deletePost(${post.id})">🗑️ Delete</button>` : ''}
+    </div>
+    <div class="comments-section" id="comments-${post.id}" style="display:none">
+      <div id="comments-list-${post.id}"></div>
+      <div class="comment-input">
+        <input type="text" id="comment-input-${post.id}" placeholder="Write a comment..." onkeydown="if(event.key==='Enter') { event.preventDefault(); addComment(${post.id}); }">
+        
+        <button type="button" onclick="addComment(${post.id})">Send</button>
+      </div>
+    </div>`;
+  box.appendChild(card);
+  loadLikeCount(post.id);
 }
 
 async function deletePost(postId) {
@@ -153,9 +168,6 @@ async function deletePost(postId) {
     const res = await fetch(`${API}/posts/${postId}`, { method: 'DELETE', headers: authHeaders() });
     if (res.ok) {
       document.getElementById(`post-${postId}`)?.remove();
-      if (document.getElementById('profile-section').style.display === 'block') {
-        viewProfile(currentUserId, currentUsername);
-      }
     }
   } catch { console.error('Delete failed'); }
 }
@@ -178,17 +190,19 @@ async function likePost(postId) {
   const isLiked = btn.dataset.liked === 'true';
   const method  = isLiked ? 'DELETE' : 'POST';
 
-  // Optimistic UI
   btn.dataset.liked = String(!isLiked);
   btn.querySelector('.btn-text').textContent = isLiked ? 'Like' : 'Liked';
   btn.classList.toggle('liked', !isLiked);
+
+  const countEl    = document.getElementById(`like-count-${postId}`);
+  let currentCount = parseInt(countEl.textContent) || 0;
+  currentCount     = isLiked ? Math.max(0, currentCount - 1) : currentCount + 1;
+  countEl.textContent = currentCount > 0 ? `${currentCount} like${currentCount !== 1 ? 's' : ''}` : '';
 
   try {
     await fetch(`${API}/posts/${postId}/like`, { method, headers: authHeaders() });
   } catch {}
 
-  // Sync real count from server
-  await loadLikeCount(postId);
   btn.disabled = false;
 }
 
@@ -206,11 +220,11 @@ async function loadComments(postId) {
     const comments = await res.json();
     const list     = document.getElementById(`comments-list-${postId}`);
     if (!list) return;
+    list.innerHTML = '';
     if (!comments.length) {
       list.innerHTML = '<p style="color:#aaa;font-size:13px;padding:4px 0">No comments yet</p>';
       return;
     }
-    list.innerHTML = '';
     comments.forEach(c => {
       const div = document.createElement('div');
       div.className = 'comment';
@@ -225,35 +239,59 @@ async function addComment(postId) {
   const content = input.value.trim();
   if (!content) return;
   try {
-    const res = await fetch(`${API}/posts/${postId}/comment`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ content }) });
-    if (res.ok) { input.value = ''; loadComments(postId); }
+    const res = await fetch(`${API}/posts/${postId}/comment`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ content })
+    });
+    if (res.ok) {
+      input.value = '';
+      loadComments(postId);
+    }
   } catch {}
 }
 
-// ── PROFILE ───────────────────────────────────────
+// ── PROFILE & FOLLOW ──────────────────────────────
 async function viewProfile(userId, username) {
   document.getElementById('feed-section').style.display    = 'none';
   document.getElementById('profile-section').style.display = 'block';
 
   document.getElementById('profile-avatar-big').textContent = username.charAt(0).toUpperCase();
   document.getElementById('profile-username').textContent   = username;
-  document.getElementById('profile-label').textContent      =
-    String(userId) === String(currentUserId) ? 'Your profile' : '@' + username;
+  document.getElementById('profile-label').textContent      = String(userId) === String(currentUserId) ? 'Your profile' : '@' + username;
+
+  try {
+    const profRes = await fetch(`${API}/profile/${userId}?currentUserId=${currentUserId}`);
+    if (profRes.ok) {
+      const profileData = await profRes.json();
+      
+      document.getElementById('profile-stats').innerHTML = `<strong>${profileData.followers}</strong> Followers &nbsp; • &nbsp; <strong>${profileData.following}</strong> Following`;
+      
+      const actionDiv = document.getElementById('profile-action');
+      if (String(userId) !== String(currentUserId)) {
+        actionDiv.innerHTML = `<button class="action-btn" style="border: 1px solid var(--orange); color: var(--orange);" onclick="toggleFollow(${userId}, '${username}')">
+          ${profileData.isFollowing ? 'Unfollow' : 'Follow'}
+        </button>`;
+      } else {
+        actionDiv.innerHTML = ''; 
+      }
+    }
+  } catch (err) { console.error('Failed to load profile stats'); }
 
   try {
     const res   = await fetch(`${API}/posts/user/${userId}`);
     const posts = await res.json();
     const box   = document.getElementById('user-posts');
+    box.innerHTML = '';
 
     if (!posts.length) { box.innerHTML = '<div class="empty">No posts yet</div>'; return; }
 
-    box.innerHTML = '';
     posts.forEach(p => {
-      const date = new Date(p.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+      const date     = new Date(p.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
       const isMyPost = String(userId) === String(currentUserId);
-      const card = document.createElement('div');
+      const card     = document.createElement('div');
       card.className = 'post-card';
-      card.id = `post-${p.id}`;
+      card.id        = `post-${p.id}`;
       card.innerHTML = `
         <div class="post-content">${esc(p.content)}</div>
         <div class="post-actions" style="border-top:none;padding-top:0;">
@@ -263,6 +301,13 @@ async function viewProfile(userId, username) {
       box.appendChild(card);
     });
   } catch {}
+}
+
+async function toggleFollow(userId, username) {
+  try {
+    const res = await fetch(`${API}/users/${userId}/follow`, { method: 'POST', headers: authHeaders() });
+    if (res.ok) { viewProfile(userId, username); }
+  } catch (err) { console.error('Follow toggle failed'); }
 }
 
 function showProfile() { viewProfile(currentUserId, currentUsername); }

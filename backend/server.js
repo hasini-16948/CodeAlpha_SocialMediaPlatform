@@ -3,6 +3,7 @@ const cors = require('cors');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const Database = require('better-sqlite3');
+const path = require('path');
 
 const app = express();
 const db = new Database('social.db');
@@ -11,6 +12,15 @@ const SECRET = 'socialmedia_secret_key_2024';
 app.use(cors());
 app.use(express.json());
 
+// 1. Tell Express where to find your frontend CSS and JS files
+app.use(express.static(path.join(__dirname, '../frontend')));
+
+// 2. Explicitly send the index.html file when you open http://localhost:3000
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/index.html'));
+});
+
+// Initialize Database Tables
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -37,6 +47,11 @@ db.exec(`
     content TEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+  CREATE TABLE IF NOT EXISTS follows (
+    follower_id INTEGER,
+    following_id INTEGER,
+    PRIMARY KEY (follower_id, following_id)
+  );
 `);
 
 // Auth middleware
@@ -51,11 +66,10 @@ function auth(req, res, next) {
   }
 }
 
-// REGISTER
+// ── AUTH ROUTES ──
 app.post('/register', async (req, res) => {
   const { username, email, password } = req.body;
-  if (!username || !email || !password)
-    return res.status(400).json({ error: 'All fields required' });
+  if (!username || !email || !password) return res.status(400).json({ error: 'All fields required' });
   try {
     const hashed = await bcrypt.hash(password, 10);
     db.prepare('INSERT INTO users (username, email, password) VALUES (?, ?, ?)').run(username, email, hashed);
@@ -65,7 +79,6 @@ app.post('/register', async (req, res) => {
   }
 });
 
-// LOGIN
 app.post('/login', async (req, res) => {
   const { email, password } = req.body;
   try {
@@ -80,14 +93,41 @@ app.post('/login', async (req, res) => {
   }
 });
 
-// PROFILE
+// ── PROFILE & FOLLOW ROUTES ──
 app.get('/profile/:id', (req, res) => {
+  const currentUserId = req.query.currentUserId; 
+  
   const user = db.prepare('SELECT id, username, email, bio FROM users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
-  res.json(user);
+  
+  const followersCount = db.prepare('SELECT COUNT(*) as count FROM follows WHERE following_id = ?').get(req.params.id).count;
+  const followingCount = db.prepare('SELECT COUNT(*) as count FROM follows WHERE follower_id = ?').get(req.params.id).count;
+  
+  let isFollowing = false;
+  if (currentUserId && currentUserId !== 'undefined' && currentUserId !== 'null') {
+    const check = db.prepare('SELECT * FROM follows WHERE follower_id = ? AND following_id = ?').get(currentUserId, req.params.id);
+    if (check) isFollowing = true;
+  }
+  
+  res.json({ ...user, followers: followersCount, following: followingCount, isFollowing });
 });
 
-// CREATE POST (auth required)
+app.post('/users/:id/follow', auth, (req, res) => {
+  const followerId = req.user.userId;
+  const followingId = req.params.id;
+  
+  if (String(followerId) === String(followingId)) return res.status(400).json({ error: "You cannot follow yourself" });
+  
+  try {
+    db.prepare('INSERT INTO follows (follower_id, following_id) VALUES (?, ?)').run(followerId, followingId);
+    res.json({ message: 'Followed' });
+  } catch {
+    db.prepare('DELETE FROM follows WHERE follower_id = ? AND following_id = ?').run(followerId, followingId);
+    res.json({ message: 'Unfollowed' });
+  }
+});
+
+// ── POST ROUTES ──
 app.post('/posts', auth, (req, res) => {
   const { content } = req.body;
   if (!content || !content.trim()) return res.status(400).json({ error: 'Content required' });
@@ -99,7 +139,6 @@ app.post('/posts', auth, (req, res) => {
   }
 });
 
-// GET ALL POSTS
 app.get('/posts', (req, res) => {
   try {
     const posts = db.prepare(`
@@ -111,7 +150,6 @@ app.get('/posts', (req, res) => {
   } catch { res.json([]); }
 });
 
-// GET USER POSTS
 app.get('/posts/user/:userId', (req, res) => {
   try {
     const posts = db.prepare(`
@@ -123,7 +161,6 @@ app.get('/posts/user/:userId', (req, res) => {
   } catch { res.json([]); }
 });
 
-// DELETE POST (auth + ownership check)
 app.delete('/posts/:id', auth, (req, res) => {
   const post = db.prepare('SELECT * FROM posts WHERE id = ?').get(req.params.id);
   if (!post) return res.status(404).json({ error: 'Post not found' });
@@ -134,7 +171,7 @@ app.delete('/posts/:id', auth, (req, res) => {
   res.json({ message: 'Deleted!' });
 });
 
-// LIKE (auth required)
+// ── LIKES ROUTES ──
 app.post('/posts/:id/like', auth, (req, res) => {
   try {
     db.prepare('INSERT INTO likes (user_id, post_id) VALUES (?, ?)').run(req.user.userId, req.params.id);
@@ -161,7 +198,7 @@ app.get('/users/:userId/liked-posts', (req, res) => {
   } catch { res.json([]); }
 });
 
-// COMMENTS (auth required)
+// ── COMMENTS ROUTES ──
 app.post('/posts/:id/comment', auth, (req, res) => {
   const { content } = req.body;
   if (!content || !content.trim()) return res.status(400).json({ error: 'Content required' });

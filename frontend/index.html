@@ -21,7 +21,7 @@
         <input type="text" id="reg-username" placeholder="Username" autocomplete="off">
         <input type="email" id="reg-email" placeholder="Email" autocomplete="off">
         <input type="password" id="reg-password" placeholder="Password" autocomplete="new-password">
-        <button onclick="register()">Create Account</button>
+        <button type="button" onclick="register()">Create Account</button>
         <p class="switch">Already have an account? <span onclick="showLogin()">Sign in</span></p>
       </div>
 
@@ -29,7 +29,7 @@
         <h2>Welcome back</h2>
         <input type="email" id="log-email" placeholder="Email" autocomplete="off">
         <input type="password" id="log-password" placeholder="Password" autocomplete="new-password">
-        <button onclick="login()">Sign In</button>
+        <button type="button" onclick="login()">Sign In</button>
         <p class="switch">No account? <span onclick="showRegister()">Create one</span></p>
       </div>
 
@@ -46,9 +46,9 @@
           <span>Vibe</span>
         </div>
         <div class="nav-right">
-          <button class="nav-btn" onclick="showFeed()">Home</button>
-          <button class="nav-btn" onclick="showProfile()">Profile</button>
-          <button class="nav-btn logout" onclick="logout()">Sign out</button>
+          <button type="button" class="nav-btn" onclick="showFeed()">Home</button>
+          <button type="button" class="nav-btn" onclick="showProfile()">Profile</button>
+          <button type="button" class="nav-btn logout" onclick="logout()">Sign out</button>
         </div>
       </div>
     </nav>
@@ -59,7 +59,7 @@
         <div class="create-post">
           <textarea id="post-content" placeholder="What's on your mind?"></textarea>
           <div class="create-post-footer">
-            <button onclick="createPost()">Post</button>
+            <button type="button" onclick="createPost()">Post</button>
           </div>
         </div>
         <div id="posts-container"></div>
@@ -71,15 +71,16 @@
           <div>
             <h2 id="profile-username"></h2>
             <p id="profile-label"></p>
+            <p id="profile-stats" style="font-size: 14px; color: var(--text-soft); margin-top: 8px;"></p>
+            <div id="profile-action" style="margin-top: 12px;"></div>
           </div>
-          <button class="back-btn" onclick="showFeed()">← Back</button>
+          <button type="button" class="back-btn" onclick="showFeed()">← Back</button>
         </div>
         <div id="user-posts"></div>
       </div>
 
     </div>
   </div>
-
-  <script src="app.js"></script>
+<script src="app.js?v=2"></script>
 </body>
 </html>
