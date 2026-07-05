@@ -21,9 +21,10 @@ A full-stack Social Media Platform built using Node.js, Express.js, SQLite, HTML
 - Comment on posts
 - Like count updates in real time
 
-**Profiles**
+**Profiles and follow**
 - Click any username to view their profile
 - See all posts by that user in one place
+- can follow other users
 
 ---
 
